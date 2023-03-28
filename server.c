@@ -133,29 +133,6 @@ void GET_handler(){
             write(clnt_sock, "HTTP/1.1 404 Not Found\n", 23);
         }
     }
-
-    // check the file
-//	int mode = R_OK | W_OK;
-//	if(access(path, mode) == 0){
-//		printf("File is exist\n");
-//        send(clnt_sock, "HTTP/1.0 200 OK\n", 16, 0);
-//
-//        file = open(path, O_RDONLY);
-//        while(1){
-//            length = read(file, send_data, BUFSIZE);
-//            if(length <= 0) break;
-//            printf("length: %d\n", length);
-////            printf("length: %d\n", length);
-////            send(clnt_sock, send_data, sizeof(send_data), 0);
-//            write(clnt_sock, send_data, length);
-//        }
-//        printf("check\n");
-//
-//	}
-//	else{
-//		printf("File is not exist\n");
-//        send(clnt_sock, "HTTP/1.1 404 Not Found\n", 23, 0);
-//	}
 }
 
 void generate_response(){
