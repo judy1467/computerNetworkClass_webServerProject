@@ -22,7 +22,11 @@ char* http_version;
 void error_handling(char* message);
 void GET_handler();
 void request_handler();
-void generate_header();
+void generate_header(unsigned long* file_size);
+void read_request_message();
+void send_file(char* path, int* file);
+void check_file_existence(char* path, int* file, unsigned long* file_size);
+void get_file_size(char* path, int* file, unsigned long* file_size);
 
 int main(int argc, char* argv[])
 {
@@ -58,7 +62,6 @@ int main(int argc, char* argv[])
             break;
         }
         // after client's connection call handler
-//        GET_handler();
         request_handler();
     }
 
@@ -76,8 +79,105 @@ void error_handling(char* message){
 
 void request_handler(){
     if(recv(clnt_sock, recv_data, sizeof(recv_data)-1, 0) == -1) error_handling("recv error!]n");
-    printf("%s\n", recv_data); // for check recv_data
 
+    // Part A:dump request message in console
+    printf("%s\n", recv_data);
+
+    read_request_message();
+
+    if(request_file != NULL)
+        if(strncmp(method, "GET", 3) == 0) GET_handler();
+
+    printf("[close socket]\n--------------------------\n");
+    close(clnt_sock);
+
+    memset(recv_data, 0, sizeof(recv_data));
+    memset(send_data, 0, sizeof(send_data));
+}
+
+void GET_handler(){
+    int file;
+    char path[1024] = "";
+    unsigned long file_size = 0;
+
+    if(strcmp(request_file, "/") == 0){
+        printf("[requested file is empty]\n");
+
+        // send status code(200)
+        send(clnt_sock, "HTTP/1.1 200 OK\r\n\r\n", 19, 0);
+
+        // pwd + default page file(default.html)
+        strcat(path, getenv("PWD"));
+        strcat(path, "/.."); // when run in CLion set it, but run in terminal unset it.
+        strcat(path, "/default.html");
+
+        send_file(path, &file);
+    }
+    else{
+        // concatenate path & filename
+        strcat(path, getenv("PWD"));
+
+        // CLion에서 돌릴 때는 밑에꺼 주석 풀어줘야함, 터미널에서 돌릴 때는 주석 처리하고
+        strcat(path, "/..");
+        strcat(path, request_file);
+
+        check_file_existence(path, &file, &file_size);
+    }
+}
+
+#define TIME_BUF_SIZE 64
+#define SERVER_NAME "LittleHTTP"
+#define SERVER_VERSION "1.1"
+
+void generate_header(unsigned long* file_size){
+    char header[BUFSIZE];
+    // initialize header
+    memset(header, 0, BUFSIZE);
+
+    time_t t;
+    struct tm *tm;
+    char buf[TIME_BUF_SIZE];
+    t = time(NULL);
+    tm = gmtime(&t);
+    strftime(buf, TIME_BUF_SIZE, "Date: %a, %d %b %Y %H:%M:%S GMT\r\n", tm);
+
+    strcat(header, buf);
+    strcat(header, "Server: ");
+    strcat(header, SERVER_NAME);
+    strcat(header, "\\");
+    strcat(header, SERVER_VERSION);
+    strcat(header, "\r\n");
+
+    // convert "unsigned long" to "char[]"
+    char num[10];
+    sprintf(num, "%lu", (*file_size));
+
+    strcat(header, "Content-Length: ");
+    strcat(header, num);
+    strcat(header, "\r\n\r\n");
+
+
+
+//    if(strstr(request_file, ".html") !=  NULL)
+//        strcat(header, "Content-Type: text/html\r\n");
+//    else if(strstr(request_file, ".png") != NULL)
+//        strcat(header, "Content-Type: image/png\r\n");
+//    else if(strstr(request_file, ".jpg") != NULL)
+//        strcat(header, "Content-Type: image/jpeg\r\n\r\n");
+//    else if(strstr(request_file, ".mp3") != NULL)
+//        strcat(header, "Content-Type: audio/mpeg\r\n\r\n");
+//    else if(strstr(request_file, ".pdf") != NULL)
+//        strcat(header, "Content-Type: application/pdf\r\n\r\n");
+//    else
+//        strcat(header, "Content-Type: text/plain\r\n\r\n");
+//
+//    strcat(header, "; charset=UTF-8\r\n\r\n");
+
+
+    send(clnt_sock, header, sizeof(header), 0);
+}
+
+void read_request_message(){
     char* first_line[3];
 
     method = (first_line[0] = strtok(recv_data, " ")); // method
@@ -87,71 +187,59 @@ void request_handler(){
     printf("method: %s\n", method);
     printf("file: %s\n", request_file);
     printf("protocol version: %s\n", http_version);
-
-    if(strncmp(method, "GET", 3) == 0) GET_handler();
-
-    printf("[close socket]\n--------------------------\n");
-    close(clnt_sock);
-
 }
 
-void GET_handler(){
-    int file, length;
+void send_file(char* path, int* file){
+    int length;
+
+    // initialize send_data
     memset(send_data, 0, sizeof(send_data));
 
-    if(strcmp(request_file, "/") == 0){
-        printf("[requested file is empty]\n");
+    // open the file with read_only mode
+    (*file) = open(path, O_RDONLY);
 
-        // send status code(200)
-        send(clnt_sock, "HTTP/1.1 200 OK\r\n\r\n", 19, 0);
+    // read file data and send to clnt_sock
+    while(1){
+        length = read((*file), send_data, BUFSIZE);
+        if(length <= 0) break;
+        write(clnt_sock, send_data, length);
+    }
+}
 
-        char default_path[1024] = "";
-        strcat(default_path, getenv("PWD"));
-        strcat(default_path, "/..");
-        strcat(default_path, "/default.html");
+void check_file_existence(char* path, int* file, unsigned long* file_size){
+    // check the file
+    int mode = R_OK | W_OK;
+    if(access(path, mode) == 0){
+        printf("[File is exist!]\n");
 
-        file = open(default_path, O_RDONLY);
-        while(1){
-            length = read(file, send_data, BUFSIZE);
-            if(length <= 0) break;
-            write(clnt_sock, send_data, length);
+        // open, read는 c라이브러리의 fopen, fread와는 달리 리눅스에서 제공하는 함수
+        if(((*file) = open(path, O_RDONLY)) != -1){
+            memset(file_size, 0, sizeof(int));
+            // 타입마다 헤더를 따로 붙여줘야 함 아니면 웹브라우저에서 제대로 표시를 못 함
+            send(clnt_sock, "HTTP/1.1 200 OK\r\n", 17, 0);
+
+            get_file_size(path, file ,file_size);
+
+            generate_header(file_size);
+            send_file(path, file);
+            printf("file size: %lu\n", *file_size);
         }
     }
     else{
-        // concatenate path & filename
-        char path[1024] = "";
-        strcat(path, getenv("PWD"));
+        printf("[File is not exist]\n");
+        send(clnt_sock, "HTTP/1.1 404 Not Found\r\n", 24, 0);
+    }
+}
 
-        // CLion에서 돌릴 때는 밑에꺼 주석 풀어줘야함, 터미널에서 돌릴 때는 주석 처리하고
-        strcat(path, "/..");
-        strcat(path, request_file);
-        printf("path: %s\n", path);
-
-        // check the file
-        int mode = R_OK | W_OK;
-        if(access(path, mode) == 0){
-
-            printf("[File is exist!]\n");
-
-            // open, read는 c라이브러리의 fopen, fread와는 달리 리눅스에서 제공하는 함수
-            if((file = open(path, O_RDONLY)) != -1){
-                // 타입마다 헤더를 따로 붙여줘야 함 아니면 웹브라우저에서 제대로 표시를 못 함
-                generate_header();
-                send(clnt_sock, "HTTP/1.1 200 OK\r\n\r\n", 19, 0);
-                int total_size = 0;
-                while(1){
-                    length = read(file, send_data, BUFSIZE);
-                    total_size += length;
-                    if(length == 0) break;
-                    write(clnt_sock, send_data, length);
-                }
-                printf("file size = %dBytes\n[sending file done!!]\n", total_size);
-            }
-
-        }
-        else{
-            printf("[File is not exist]\n");
-            write(clnt_sock, "HTTP/1.1 404 Not Found\n", 23);
-        }
+void get_file_size(char* path, int* file, unsigned long* file_size){
+    (*file) = open(path, O_RDONLY);
+    int length;
+    int tmp[BUFSIZE];
+    memset(tmp, 0, BUFSIZE);
+    // read file data and send to clnt_sock
+    while(1){
+        length = read((*file), tmp, BUFSIZE);
+        (*file_size) += length;
+        if(length <= 0) break;
     }
 }
