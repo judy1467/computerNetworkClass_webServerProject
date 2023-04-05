@@ -27,7 +27,7 @@ void read_request_message();
 void send_file(char* path, int* file);
 void check_file_existence(char* path, int* file, unsigned long* file_size);
 void get_file_size(char* path, int* file, unsigned long* file_size);
-void send_http_response(int client_socket, char *content);
+char* file_type();
 
 int main(int argc, char* argv[])
 {
@@ -127,11 +127,7 @@ void GET_handler(){
 
 #define TIME_BUF_SIZE 64
 void generate_header(unsigned long* file_size){
-    char header[BUFSIZE];
-    // initialize header
-    memset(header, 0, BUFSIZE);
 
-    strcat(header, "HTTP/1.1 200 OK\r\n");
 
     // get date, time to attach at header
     time_t t;
@@ -142,37 +138,31 @@ void generate_header(unsigned long* file_size){
     tm = gmtime(&t);
     strftime(buf, TIME_BUF_SIZE, "Date: %a, %d %b %Y %H:%M:%S GMT\r\n", tm);
 
-    strcat(header, buf);
 
-    // convert "unsigned long" to "char[]"
-    char num[10];
-    sprintf(num, "%lu", (*file_size));
+//    strcat(header, buf);
 
-    strcat(header, "Content-Length: ");
-    strcat(header, num);
-    strcat(header, "\r\n");
 
-    if(strstr(request_file, ".html") !=  NULL)
-        strcat(header, "Content-Type: text/html\r\n");
-    else if(strstr(request_file, ".png") != NULL)
-        strcat(header, "Content-Type: image/png\r\n");
-    else if(strstr(request_file, ".jpg") != NULL)
-        strcat(header, "Content-Type: image/jpeg\r\n");
-    else if(strstr(request_file, ".mp3") != NULL)
-        strcat(header, "Content-Type: audio/mpeg\r\n");
-    else if(strstr(request_file, ".pdf") != NULL)
-        strcat(header, "Content-Type: application/pdf\r\n");
-    else
-        strcat(header, "Content-Type: text/plain\r\n");
 
-    strcat(header, "Connection: keep-alive\r\n");
+
+//    send(clnt_sock, header, strlen(header), 0);
+
+
+//    if(strstr(request_file, ".html") !=  NULL)
+//        strcat(header, "Content-Type: text/html\r\n");
+//    else if(strstr(request_file, ".png") != NULL)
+//        strcat(header, "Content-Type: image/png\r\n");
+//    else if(strstr(request_file, ".jpg") != NULL)
+//        strcat(header, "Content-Type: image/jpeg\r\n");
+//    else if(strstr(request_file, ".mp3") != NULL)
+//        strcat(header, "Content-Type: audio/mpeg\r\n");
+//    else if(strstr(request_file, ".pdf") != NULL)
+//        strcat(header, "Content-Type: application/pdf\r\n");
+//    else
+//        strcat(header, "Content-Type: text/plain\r\n");
+
+//    strcat(header, "Connection: keep-alive\r\n");
 
     // enter to separate header, data
-    strcat(header, "\r\n");
-
-    printf("header:\n%s\n", header);
-
-    send(clnt_sock, header, sizeof(header), 0);
 }
 
 void read_request_message(){
@@ -219,18 +209,11 @@ void check_file_existence(char* path, int* file, unsigned long* file_size){
         // open, read는 c라이브러리의 fopen, fread와는 달리 리눅스에서 제공하는 함수
         if(((*file) = open(path, O_RDONLY)) != -1){
             memset(file_size, 0, sizeof(int));
-            // 타입마다 헤더를 따로 붙여줘야 함 아니면 웹브라우저에서 제대로 표시를 못 함
-//            char message_tmp[] = "HTTP/1.1 200 OK\r\n";
-//            send(clnt_sock, message_tmp, sizeof(message_tmp), 0);
-
             get_file_size(path, file ,file_size);
-
-//            generate_header(file_size);
-
             char header[BUFSIZE];
-            sprintf(header, "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: %lu\r\n\r\n", (*file_size));
+            // file 타입마다 헤더를 따로 붙여줘야 함 아니면 웹브라우저에서 제대로 표시를 못 함
+            sprintf(header, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %lu\r\n\r\n", file_type(), (*file_size));
             send(clnt_sock, header, strlen(header), 0);
-
             send_file(path, file);
             printf("file size: %lu\n", *file_size);
         }
@@ -257,8 +240,25 @@ void get_file_size(char* path, int* file, unsigned long* file_size){
     close(*file);
 }
 
-void send_http_response(int client_socket, char *content) {
-    char response[1024];
-    sprintf(response, "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: %lu\r\n\r\n%s", strlen(content), content);
-    send(client_socket, response, strlen(response), 0);
+char* file_type(){
+    if(strstr(request_file, ".html") !=  NULL)
+        return "text/html";
+    else if(strstr(request_file, ".png") != NULL)
+        return "image/png";
+    else if(strstr(request_file, ".jpg") != NULL)
+        return "image/jpeg";
+    else if(strstr(request_file, ".mp3") != NULL)
+        return "audio/mpeg";
+    else if(strstr(request_file, ".pdf") != NULL)
+        return "application/pdf";
+    else if(strstr(request_file, ".mov") != NULL)
+        return "video/quicktime";
+    else if(strstr(request_file, ".mp4") != NULL)
+        return "video/mp4";
+    else if(strstr(request_file, ".mpeg") != NULL || strstr(request_file, ".mpg") != NULL || strstr(request_file, ".m4v") != NULL)
+        return "video/mpeg";
+    else if(strstr(request_file, ".avi") != NULL)
+        return "video/x-msvideo";
+    else
+        return "text/plain";
 }
