@@ -27,6 +27,7 @@ void read_request_message();
 void send_file(char* path, int* file);
 void check_file_existence(char* path, int* file, unsigned long* file_size);
 void get_file_size(char* path, int* file, unsigned long* file_size);
+void send_http_response(int client_socket, char *content);
 
 int main(int argc, char* argv[])
 {
@@ -224,7 +225,12 @@ void check_file_existence(char* path, int* file, unsigned long* file_size){
 
             get_file_size(path, file ,file_size);
 
-            generate_header(file_size);
+//            generate_header(file_size);
+
+            char header[BUFSIZE];
+            sprintf(header, "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: %lu\r\n\r\n", (*file_size));
+            send(clnt_sock, header, strlen(header), 0);
+
             send_file(path, file);
             printf("file size: %lu\n", *file_size);
         }
@@ -249,4 +255,10 @@ void get_file_size(char* path, int* file, unsigned long* file_size){
         memset(tmp, 0, sizeof(tmp));
     }
     close(*file);
+}
+
+void send_http_response(int client_socket, char *content) {
+    char response[1024];
+    sprintf(response, "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: %lu\r\n\r\n%s", strlen(content), content);
+    send(client_socket, response, strlen(response), 0);
 }
