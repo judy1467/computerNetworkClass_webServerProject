@@ -137,32 +137,6 @@ void generate_header(unsigned long* file_size){
     t = time(NULL);
     tm = gmtime(&t);
     strftime(buf, TIME_BUF_SIZE, "Date: %a, %d %b %Y %H:%M:%S GMT\r\n", tm);
-
-
-//    strcat(header, buf);
-
-
-
-
-//    send(clnt_sock, header, strlen(header), 0);
-
-
-//    if(strstr(request_file, ".html") !=  NULL)
-//        strcat(header, "Content-Type: text/html\r\n");
-//    else if(strstr(request_file, ".png") != NULL)
-//        strcat(header, "Content-Type: image/png\r\n");
-//    else if(strstr(request_file, ".jpg") != NULL)
-//        strcat(header, "Content-Type: image/jpeg\r\n");
-//    else if(strstr(request_file, ".mp3") != NULL)
-//        strcat(header, "Content-Type: audio/mpeg\r\n");
-//    else if(strstr(request_file, ".pdf") != NULL)
-//        strcat(header, "Content-Type: application/pdf\r\n");
-//    else
-//        strcat(header, "Content-Type: text/plain\r\n");
-
-//    strcat(header, "Connection: keep-alive\r\n");
-
-    // enter to separate header, data
 }
 
 void read_request_message(){
