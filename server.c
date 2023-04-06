@@ -79,7 +79,7 @@ void error_handling(char* message){
 }
 
 void request_handler(){
-    if(recv(clnt_sock, recv_data, sizeof(recv_data)-1, 0) == -1) error_handling("recv error!]n");
+    if(recv(clnt_sock, recv_data, sizeof(recv_data)-1, 0) == -1) error_handling("[recv error!]\n");
 
     // Part A:dump request message in console
     printf("%s\n", recv_data);
@@ -92,8 +92,8 @@ void request_handler(){
     printf("[close socket]\n--------------------------\n");
     close(clnt_sock);
 
-    memset(recv_data, 0, sizeof(recv_data));
-    memset(send_data, 0, sizeof(send_data));
+//    memset(recv_data, 0, sizeof(recv_data));
+//    memset(send_data, 0, sizeof(send_data));
 }
 
 void GET_handler(){
@@ -117,8 +117,7 @@ void GET_handler(){
         // concatenate path & filename
         strcat(path, getenv("PWD"));
 
-        // CLion에서 돌릴 때는 밑에꺼 주석 풀어줘야함, 터미널에서 돌릴 때는 주석 처리하고
-//        strcat(path, "/..");
+//        strcat(path, "/.."); // when run in CLion set it, but run in terminal unset it.
         strcat(path, request_file);
 
         check_file_existence(path, &file, &file_size);
@@ -127,7 +126,11 @@ void GET_handler(){
 
 #define TIME_BUF_SIZE 64
 void generate_header(unsigned long* file_size){
+    char header[BUFSIZE];
 
+    // file 타입마다 헤더를 따로 붙여줘야 함 아니면 웹브라우저에서 제대로 표시를 못 함
+    sprintf(header, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %lu\r\nAccept-Ranges: bytes\r\n", file_type(), (*file_size));
+//    send(clnt_sock, header, strlen(header), 0);
 
     // get date, time to attach at header
     time_t t;
@@ -136,7 +139,10 @@ void generate_header(unsigned long* file_size){
     memset(buf, 0, sizeof(buf));
     t = time(NULL);
     tm = gmtime(&t);
-    strftime(buf, TIME_BUF_SIZE, "Date: %a, %d %b %Y %H:%M:%S GMT\r\n", tm);
+    strftime(buf, TIME_BUF_SIZE, "Date: %a, %d %b %Y %H:%M:%S GMT\r\n\r\n", tm);
+    strcat(header, buf);
+
+    send(clnt_sock, header, strlen(header), 0);
 }
 
 void read_request_message(){
@@ -152,27 +158,20 @@ void read_request_message(){
 }
 
 void send_file(char* path, int* file){
-    int length;
+    char buffer[1048576];
+    size_t bytes_read;
+    FILE *fp;
+    fp = fopen(path, "rb");
 
-    // initialize send_data
-    memset(send_data, 0, sizeof(send_data));
+    while((bytes_read = fread(buffer, 1, sizeof(buffer), fp)) > 0) {
+        send(clnt_sock, buffer, bytes_read, 0);
 
-    // open the file with read_only mode
-    (*file) = open(path, O_RDONLY);
-    if(*file < 0) error_handling("open error!\n");
-
-    // read file data and send to clnt_sock
-    while(1){
-        length = read((*file), send_data, BUFSIZE);
-        if(length <= 0) break;
-        write(clnt_sock, send_data, length);
-        memset(send_data, 0, sizeof(send_data));
+        // when send .mp3 file occur "Terminated due to signal 13" so, add this method
+        signal(SIGPIPE, SIG_IGN);
     }
 
-    char message_tmp[] = "\r\n";
-    send(clnt_sock, message_tmp, sizeof(message_tmp), 0);
-
-    close(*file);
+    printf("[send done]\n");
+    fclose(fp);
 }
 
 void check_file_existence(char* path, int* file, unsigned long* file_size){
@@ -180,35 +179,37 @@ void check_file_existence(char* path, int* file, unsigned long* file_size){
     int mode = R_OK | W_OK;
     if(access(path, mode) == 0){
         printf("[File exist]\n");
-        // open, read는 c라이브러리의 fopen, fread와는 달리 리눅스에서 제공하는 함수
-        if(((*file) = open(path, O_RDONLY)) != -1){
-            memset(file_size, 0, sizeof(int));
-            get_file_size(path, file ,file_size);
-            char header[BUFSIZE];
-            // file 타입마다 헤더를 따로 붙여줘야 함 아니면 웹브라우저에서 제대로 표시를 못 함
-            sprintf(header, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %lu\r\n\r\n", file_type(), (*file_size));
-            send(clnt_sock, header, strlen(header), 0);
-            send_file(path, file);
-            printf("file size: %lu\n", *file_size);
-        }
+
+        memset(file_size, 0, sizeof(int));
+        get_file_size(path, file ,file_size);
+        generate_header(file_size);
+//        char header[BUFSIZE];
+//
+//        // file 타입마다 헤더를 따로 붙여줘야 함 아니면 웹브라우저에서 제대로 표시를 못 함
+//        sprintf(header, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %lu\r\n\r\n", file_type(), (*file_size));
+//        send(clnt_sock, header, strlen(header), 0);
+        send_file(path, file);
+
+        printf("file size: %lu\n", *file_size);
     }
     else{
         printf("[File not exist]\n");
         send(clnt_sock, "HTTP/1.1 404 Not Found\r\n", 24, 0);
     }
-    close(*file);
 }
 
 void get_file_size(char* path, int* file, unsigned long* file_size){
     (*file) = open(path, O_RDONLY);
-    int length;
-    int tmp[BUFSIZE];
+    int length, tmp[BUFSIZE];
     memset(tmp, 0, BUFSIZE);
+
     // read file data and send to clnt_sock
     while(1){
         length = read((*file), tmp, BUFSIZE);
         (*file_size) += length;
+
         if(length <= 0) break;
+
         memset(tmp, 0, sizeof(tmp));
     }
     close(*file);
