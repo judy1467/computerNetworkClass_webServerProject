@@ -128,6 +128,7 @@ void GET_handler(){
 void generate_header(unsigned long* file_size){
     char header[BUFSIZE];
 
+
     // file 타입마다 헤더를 따로 붙여줘야 함 아니면 웹브라우저에서 제대로 표시를 못 함
     sprintf(header, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %lu\r\nAccept-Ranges: bytes\r\n", file_type(), (*file_size));
 //    send(clnt_sock, header, strlen(header), 0);
