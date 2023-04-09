@@ -5,8 +5,8 @@
 #include <pthread.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
-#include <arpa/inet.h>
 #include <sys/fcntl.h>
+#include <sys/stat.h>
 
 #define BUFSIZE 1024
 
@@ -14,7 +14,6 @@ struct sockaddr_in serv_addr, clnt_addr;
 socklen_t clnt_addr_size;
 int serv_sock, clnt_sock;
 char recv_data[BUFSIZE];
-char send_data[BUFSIZE];
 char* method;
 char* request_file;
 char* http_version;
@@ -22,7 +21,7 @@ char* http_version;
 void error_handling(char* message);
 void GET_handler();
 void request_handler();
-void generate_header(unsigned long* file_size);
+void generate_header(const unsigned long* file_size, char* path);
 void read_request_message();
 void send_file(char* path, int* file);
 void check_file_existence(char* path, int* file, unsigned long* file_size);
@@ -31,7 +30,10 @@ char* file_type();
 
 int main(int argc, char* argv[])
 {
-//    if(argc != 2) error_handling("parameter error!\n");
+    if(argc != 2){
+        printf("Usage: %s [port#]\n", argv[0]);
+        error_handling("parameter error!\n");
+    }
 
     // Create server socket
     // socket()의 리턴 값은 고유 디스크립터 번호임, 에러는 -1반환
@@ -66,7 +68,6 @@ int main(int argc, char* argv[])
         request_handler();
     }
 
-
     close(clnt_sock);
     close(serv_sock);
 
@@ -89,16 +90,14 @@ void request_handler(){
     if(request_file != NULL)
         if(strncmp(method, "GET", 3) == 0) GET_handler();
 
-    printf("[close socket]\n--------------------------\n");
+//    printf("[close socket]\n--------------------------\n");
     close(clnt_sock);
-
-//    memset(recv_data, 0, sizeof(recv_data));
-//    memset(send_data, 0, sizeof(send_data));
 }
 
 void GET_handler(){
-    int file;
-    char path[1024] = "";
+    int file = 0;
+    char path[1024];
+    memset(path, 0, sizeof(path));
     unsigned long file_size = 0;
 
     if(strcmp(request_file, "/") == 0){
@@ -124,24 +123,31 @@ void GET_handler(){
     }
 }
 
-#define TIME_BUF_SIZE 64
-void generate_header(unsigned long* file_size){
+void generate_header(const unsigned long* file_size, char* path){
     char header[BUFSIZE];
+    memset(header, 0, sizeof(header));
 
+    // to get file's last-modified time
+    struct stat st;
+    char buf_tmp[BUFSIZE];
+    struct tm *tm2;
 
-    // file 타입마다 헤더를 따로 붙여줘야 함 아니면 웹브라우저에서 제대로 표시를 못 함
-    sprintf(header, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %lu\r\nAccept-Ranges: bytes\r\n", file_type(), (*file_size));
-//    send(clnt_sock, header, strlen(header), 0);
+    if(lstat(path, &st) == -1) error_handling("stat error!\n");
+    tm2 = gmtime((const time_t *) &st.st_mtimespec);
+    strftime(buf_tmp, sizeof(buf_tmp), "%a, %d %b %Y %H:%M:%S GMT\r\n", tm2);
+
+    // file 타입마다 헤더를 Content-type을 바꿔줘야함
+    sprintf(header, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %lu\r\nAccept-Ranges: bytes\r\nServer: http\r\nLast-Modified: %s", file_type(), (*file_size), buf_tmp);
 
     // get date, time to attach at header
     time_t t;
     struct tm *tm;
-    char buf[TIME_BUF_SIZE];
-    memset(buf, 0, sizeof(buf));
+    char buf_time[64];
+    memset(buf_time, 0, sizeof(buf_time));
     t = time(NULL);
     tm = gmtime(&t);
-    strftime(buf, TIME_BUF_SIZE, "Date: %a, %d %b %Y %H:%M:%S GMT\r\n\r\n", tm);
-    strcat(header, buf);
+    strftime(buf_time, sizeof(buf_time), "Date: %a, %d %b %Y %H:%M:%S GMT\r\n\r\n", tm);
+    strcat(header, buf_time);
 
     send(clnt_sock, header, strlen(header), 0);
 }
@@ -153,25 +159,26 @@ void read_request_message(){
     request_file = (first_line[1] = strtok(NULL, " ")); // request file
     http_version = (first_line[2] = strtok(NULL, " ")); // http version
 
-    printf("method: %s\n", method);
-    printf("file: %s\n", request_file);
-    printf("protocol version: %s\n", http_version);
+//    printf("method: %s\n", method);
+//    printf("file: %s\n", request_file);
+//    printf("protocol version: %s\n", http_version);
 }
 
 void send_file(char* path, int* file){
-    char buffer[1048576];
+    char buffer[1024];
+    memset(buffer, 0, sizeof(buffer));
     size_t bytes_read;
-    FILE *fp;
-    fp = fopen(path, "rb");
+    FILE *fp = NULL;
+    if((fp = fopen(path, "rb")) == NULL) error_handling("file open error!\n");
 
     while((bytes_read = fread(buffer, 1, sizeof(buffer), fp)) > 0) {
         send(clnt_sock, buffer, bytes_read, 0);
 
-        // when send .mp3 file occur "Terminated due to signal 13" so, add this method
+        // when send .mp3 file occur "Terminated due to signal 13" so, add this code
         signal(SIGPIPE, SIG_IGN);
     }
 
-    printf("[send done]\n");
+//    printf("[send done]\n");
     fclose(fp);
 }
 
@@ -179,38 +186,32 @@ void check_file_existence(char* path, int* file, unsigned long* file_size){
     // check the file
     int mode = R_OK | W_OK;
     if(access(path, mode) == 0){
-        printf("[File exist]\n");
+//        printf("[File exist]\n");
 
-        memset(file_size, 0, sizeof(int));
         get_file_size(path, file ,file_size);
-        generate_header(file_size);
-//        char header[BUFSIZE];
-//
-//        // file 타입마다 헤더를 따로 붙여줘야 함 아니면 웹브라우저에서 제대로 표시를 못 함
-//        sprintf(header, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %lu\r\n\r\n", file_type(), (*file_size));
-//        send(clnt_sock, header, strlen(header), 0);
+        generate_header(file_size, path);
         send_file(path, file);
 
-        printf("file size: %lu\n", *file_size);
+//        printf("file size: %lu\n", *file_size);
     }
     else{
-        printf("[File not exist]\n");
+//        printf("[File not exist]\n");
         send(clnt_sock, "HTTP/1.1 404 Not Found\r\n", 24, 0);
     }
 }
 
 void get_file_size(char* path, int* file, unsigned long* file_size){
     (*file) = open(path, O_RDONLY);
-    int length, tmp[BUFSIZE];
+    int length = 0, tmp[BUFSIZE];
     memset(tmp, 0, BUFSIZE);
 
     // read file data and send to clnt_sock
     while(1){
         length = read((*file), tmp, BUFSIZE);
-        (*file_size) += length;
-
         if(length <= 0) break;
 
+        (*file_size) += length;
+        length = 0;
         memset(tmp, 0, sizeof(tmp));
     }
     close(*file);
@@ -219,6 +220,12 @@ void get_file_size(char* path, int* file, unsigned long* file_size){
 char* file_type(){
     if(strstr(request_file, ".html") !=  NULL)
         return "text/html";
+    else if(strstr(request_file, ".htm") !=  NULL)
+        return "text/html";
+    else if(strstr(request_file, ".css") !=  NULL)
+        return "text/css";
+    else if(strstr(request_file, ".xml") !=  NULL)
+        return "text/xml";
     else if(strstr(request_file, ".png") != NULL)
         return "image/png";
     else if(strstr(request_file, ".jpg") != NULL)
@@ -227,6 +234,12 @@ char* file_type(){
         return "audio/mpeg";
     else if(strstr(request_file, ".pdf") != NULL)
         return "application/pdf";
+    else if(strstr(request_file, ".doc") != NULL)
+        return "application/msword";
+    else if(strstr(request_file, ".js") != NULL)
+        return "application/x-javascript";
+    else if(strstr(request_file, ".zip") != NULL)
+        return "application/zip";
     else if(strstr(request_file, ".mov") != NULL)
         return "video/quicktime";
     else if(strstr(request_file, ".mp4") != NULL)
