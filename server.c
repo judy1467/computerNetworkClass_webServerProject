@@ -128,25 +128,25 @@ void generate_header(const unsigned long* file_size, char* path){
     memset(header, 0, sizeof(header));
 
     // to get file's last-modified time
-    struct stat st;
-    char buf_tmp[BUFSIZE];
-    struct tm *tm2;
+    struct stat st1;
+    struct tm *tm1;
+    char buf_tmp[64];
 
-    if(lstat(path, &st) == -1) error_handling("stat error!\n");
-    tm2 = gmtime((const time_t *) &st.st_mtimespec);
-    strftime(buf_tmp, sizeof(buf_tmp), "%a, %d %b %Y %H:%M:%S GMT\r\n", tm2);
+    if(lstat(path, &st1) == -1) error_handling("stat error!\n");
+    tm1 = gmtime((const time_t *) &st1.st_mtimespec);
+    strftime(buf_tmp, sizeof(buf_tmp), "%a, %d %b %Y %H:%M:%S GMT\r\n", tm1);
 
     // file 타입마다 헤더를 Content-type을 바꿔줘야함
     sprintf(header, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %lu\r\nAccept-Ranges: bytes\r\nServer: http\r\nLast-Modified: %s", file_type(), (*file_size), buf_tmp);
 
     // get date, time to attach at header
     time_t t;
-    struct tm *tm;
+    struct tm *tm2;
     char buf_time[64];
     memset(buf_time, 0, sizeof(buf_time));
     t = time(NULL);
-    tm = gmtime(&t);
-    strftime(buf_time, sizeof(buf_time), "Date: %a, %d %b %Y %H:%M:%S GMT\r\n\r\n", tm);
+    tm2 = gmtime(&t);
+    strftime(buf_time, sizeof(buf_time), "Date: %a, %d %b %Y %H:%M:%S GMT\r\n\r\n", tm2);
     strcat(header, buf_time);
 
     send(clnt_sock, header, strlen(header), 0);
