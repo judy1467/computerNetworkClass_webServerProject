@@ -17,15 +17,16 @@ char recv_data[BUFSIZE];
 char* method;
 char* request_file;
 char* http_version;
+unsigned long file_size;
 
 void error_handling(char* message);
 void GET_handler();
 void request_handler();
-void generate_header(const unsigned long* file_size, char* path);
+void generate_header(char* path);
 void read_request_message();
-void send_file(char* path, int* file);
-void check_file_existence(char* path, int* file, unsigned long* file_size);
-void get_file_size(char* path, int* file, unsigned long* file_size);
+void send_file(char* path);
+void check_file_existence(char* path, int* file);
+void get_file_size(char* path, int* file);
 char* file_type();
 
 int main(int argc, char* argv[])
@@ -90,40 +91,28 @@ void request_handler(){
     if(request_file != NULL)
         if(strncmp(method, "GET", 3) == 0) GET_handler();
 
-//    printf("[close socket]\n--------------------------\n");
     close(clnt_sock);
+    file_size = 0;
 }
 
 void GET_handler(){
     int file = 0;
     char path[1024];
     memset(path, 0, sizeof(path));
-    unsigned long file_size = 0;
 
     if(strcmp(request_file, "/") == 0){
-
-        // send status code(200)
-        send(clnt_sock, "HTTP/1.1 200 OK\r\n\r\n", 19, 0);
-
-        // pwd + default page file(default.html)
-        strcat(path, getenv("PWD"));
-//        strcat(path, "/.."); // when run in CLion set it, but run in terminal unset it.
-        strcat(path, "/default.html");
-
-        send_file(path, &file);
+        send(clnt_sock, "HTTP/1.1 400 Bad Request\r\n\r\n", 28, 0);
     }
     else{
         // concatenate path & filename
         strcat(path, getenv("PWD"));
-
-//        strcat(path, "/.."); // when run in CLion set it, but run in terminal unset it.
         strcat(path, request_file);
 
-        check_file_existence(path, &file, &file_size);
+        check_file_existence(path, &file);
     }
 }
 
-void generate_header(const unsigned long* file_size, char* path){
+void generate_header(char* path){
     char header[BUFSIZE];
     memset(header, 0, sizeof(header));
 
@@ -137,7 +126,7 @@ void generate_header(const unsigned long* file_size, char* path){
     strftime(buf_tmp, sizeof(buf_tmp), "%a, %d %b %Y %H:%M:%S GMT\r\n", tm1);
 
     // file 타입마다 헤더를 Content-type을 바꿔줘야함
-    sprintf(header, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %lu\r\nAccept-Ranges: bytes\r\nServer: http\r\nLast-Modified: %s", file_type(), (*file_size), buf_tmp);
+    sprintf(header, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %lu\r\nAccept-Ranges: bytes\r\nServer: http\r\nLast-Modified: %s", file_type(), file_size, buf_tmp);
 
     // get date, time to attach at header
     time_t t;
@@ -158,13 +147,9 @@ void read_request_message(){
     method = (first_line[0] = strtok(recv_data, " ")); // method
     request_file = (first_line[1] = strtok(NULL, " ")); // request file
     http_version = (first_line[2] = strtok(NULL, " ")); // http version
-
-//    printf("method: %s\n", method);
-//    printf("file: %s\n", request_file);
-//    printf("protocol version: %s\n", http_version);
 }
 
-void send_file(char* path, int* file){
+void send_file(char* path){
     char buffer[1024];
     memset(buffer, 0, sizeof(buffer));
     size_t bytes_read;
@@ -173,36 +158,28 @@ void send_file(char* path, int* file){
 
     while((bytes_read = fread(buffer, 1, sizeof(buffer), fp)) > 0) {
         send(clnt_sock, buffer, bytes_read, 0);
-
-        // when send .mp3 file occur "Terminated due to signal 13" so, add this code
-        signal(SIGPIPE, SIG_IGN);
     }
 
-//    printf("[send done]\n");
     fclose(fp);
 }
 
-void check_file_existence(char* path, int* file, unsigned long* file_size){
+void check_file_existence(char* path, int* file){
     // check the file
     int mode = R_OK | W_OK;
     if(access(path, mode) == 0){
-//        printf("[File exist]\n");
 
-        get_file_size(path, file ,file_size);
-        generate_header(file_size, path);
-        send_file(path, file);
-
-//        printf("file size: %lu\n", *file_size);
+        get_file_size(path, file);
+        generate_header(path);
+        send_file(path);
     }
     else{
-//        printf("[File not exist]\n");
         send(clnt_sock, "HTTP/1.1 404 Not Found\r\n", 24, 0);
     }
 }
 
-void get_file_size(char* path, int* file, unsigned long* file_size){
+void get_file_size(char* path, int* file){
     (*file) = open(path, O_RDONLY);
-    int length = 0, tmp[BUFSIZE];
+    long length, tmp[BUFSIZE];
     memset(tmp, 0, BUFSIZE);
 
     // read file data and send to clnt_sock
@@ -210,17 +187,14 @@ void get_file_size(char* path, int* file, unsigned long* file_size){
         length = read((*file), tmp, BUFSIZE);
         if(length <= 0) break;
 
-        (*file_size) += length;
-        length = 0;
+        file_size += length;
         memset(tmp, 0, sizeof(tmp));
     }
     close(*file);
 }
 
 char* file_type(){
-    if(strstr(request_file, ".html") !=  NULL)
-        return "text/html";
-    else if(strstr(request_file, ".htm") !=  NULL)
+    if(strstr(request_file, ".html") !=  NULL || strstr(request_file, ".htm") !=  NULL)
         return "text/html";
     else if(strstr(request_file, ".css") !=  NULL)
         return "text/css";
@@ -228,8 +202,10 @@ char* file_type(){
         return "text/xml";
     else if(strstr(request_file, ".png") != NULL)
         return "image/png";
-    else if(strstr(request_file, ".jpg") != NULL)
+    else if(strstr(request_file, ".jpg") != NULL || strstr(request_file, ".jpeg") != NULL)
         return "image/jpeg";
+    else if(strstr(request_file, ".gif") != NULL)
+        return "image/gif";
     else if(strstr(request_file, ".mp3") != NULL)
         return "audio/mpeg";
     else if(strstr(request_file, ".pdf") != NULL)
